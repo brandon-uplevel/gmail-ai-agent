@@ -1,0 +1,35 @@
+# Sensitive files - DO NOT COMMIT
+*.json
+credentials.json
+client_secret_*.json
+token.json
+
+# Email data - contains private information
+emails.csv
+emails_labeled.csv
+customers.txt
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+venv/
+env/
+.env
+
+# Temporary files
+*.log
+*.tmp
+.DS_Store
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS generated files
+Thumbs.db
+.claude/

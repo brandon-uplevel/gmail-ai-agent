@@ -1,0 +1,4 @@
+# Add one domain per line. Emails from these domains will be labeled 'Customer'.
+your-company.com
+bigcustomer.com
+another-client.net
