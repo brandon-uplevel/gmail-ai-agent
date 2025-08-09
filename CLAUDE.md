@@ -4,83 +4,143 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This repository contains a comprehensive guide for building a Gmail AI Agent on Google Cloud Platform. The project demonstrates a complete end-to-end machine learning system that:
+This repository builds a Gmail AI Agent that automatically classifies incoming emails using Google Cloud Platform. The system extracts historical Gmail data, trains an ML model, and deploys a real-time classification agent.
 
-- Extracts emails from Gmail using the Gmail API
-- Classifies emails as "Prospect" or "Customer" using AutoML
-- Automatically applies labels to incoming emails via Cloud Functions
+**Current Classification Labels:**
+- **Customer**: Emails from known customers
+- **Internal**: Company internal communications (@getuplevel.ai, @upleveldigitalservices.com)
+- **Prospect**: Potential customers with inquiry keywords
+- **Other**: Everything else
 
-## Architecture
+## Current Project Status (as of Aug 8, 2025)
 
-The system consists of several key phases:
+### ✅ Completed
+1. GCP project setup (project ID: `account-strategy-464106`)
+2. All required APIs enabled
+3. OAuth2 authentication configured
+4. BigQuery dataset and table created (`gmail_agent_dataset.emails_raw`)
+5. Three extraction scripts developed:
+   - `extract_emails.py`: Original 2-label version
+   - `extract_emails_v2.py`: 4-label version with heuristics
+   - `extract_emails_to_bigquery.py`: Direct to BigQuery with metadata flags
+6. GitHub repository created: https://github.com/brandon-uplevel/gmail-ai-agent
 
-1. **Google Cloud Project Setup**: Environment configuration and API enablement
-2. **Data Extraction & Labeling**: Gmail API integration with heuristic-based labeling
-3. **Data Storage**: BigQuery for structured data and Cloud Storage for artifacts
-4. **ML Pipeline**: Vertex AI AutoML for text classification training
-5. **Model Deployment**: Vertex AI endpoints for real-time predictions
-6. **Agent Deployment**: Cloud Functions triggered by Pub/Sub for email processing
-7. **Gmail Integration**: Watch API for real-time email notifications
+### 🔄 In Progress
+- Email extraction to BigQuery running (37K+ emails processed, continuing in background)
+- Process ID can be found with: `ps aux | grep extract_emails_to_bigquery`
 
-## Key Components
+### ⏳ Next Steps
+1. Complete email extraction (wait for all 3.5 years of data)
+2. Develop SQL queries to label emails correctly
+3. Filter out automated notifications using metadata flags
+4. Train Vertex AI AutoML model
+5. Deploy Cloud Function for real-time classification
+6. Set up Gmail push notifications
 
-### Authentication & APIs
-- Gmail API with OAuth2 flow for email access
-- Google Cloud Application Default Credentials
-- Service account domain-wide delegation for production
+## Critical Context
 
-### Data Pipeline
-- `extract_emails.py`: Gmail data extraction with heuristic labeling
-- BigQuery tables for training data storage
-- Cloud Storage for pipeline artifacts and model storage
+### Email Filtering Requirements
+The user discovered thousands of automated lead notifications sent FROM their email that should NOT be used for training. These must be filtered out:
 
-### Machine Learning
-- Vertex AI AutoML Text Classification
-- Vertex AI Pipelines for automated training workflows
-- Model deployment to managed endpoints
+**Exclude from training data:**
+- Emails from `no_reply@getuplevel.ai`
+- Emails sent by user with ` | ` (pipe separator) in subject
+- Emails sent by user with "new lead" in subject
+- Any automated/templated emails that aren't real conversations
 
-### Production Agent
-- Cloud Functions for real-time email processing
-- Pub/Sub for Gmail push notifications
-- Automated label application based on ML predictions
+**Include in training data:**
+- Back-and-forth customer conversations
+- Prospect inquiries
+- Internal team discussions
+- Real human communications
 
-## Required External Setup
+### BigQuery Metadata Flags
+The `emails_raw` table includes boolean flags for filtering:
+- `is_sent_by_me`: Email was sent by brandon@getuplevel.ai
+- `is_from_no_reply`: From no_reply@getuplevel.ai
+- `has_pipe_separator`: Subject contains ` | `
+- `has_new_lead`: Subject contains "new lead"
 
-### Google Cloud Console
-1. Enable required APIs (Gmail, Vertex AI, Cloud Functions, etc.)
-2. Create OAuth2 credentials for desktop application
-3. Configure service account with domain-wide delegation
+### Architecture Decision
+We chose to extract ALL emails to BigQuery first, then apply labels via SQL queries. This allows iterative refinement of labeling logic without re-extracting emails.
 
-### Gmail Configuration
-1. Create labels: "AI-Prospect" and "AI-Customer"
-2. Grant Gmail API access to service accounts
-3. Configure Gmail push notifications
+## Key Files and Locations
 
-### Google Workspace Admin
-1. Domain-wide delegation for service accounts
-2. OAuth scope authorization for Gmail modification
+### Project Structure
+```
+/home/brandon/gmail/
+├── CLAUDE.md (this file)
+├── PROJECT.md (original tutorial)
+├── README.md (GitHub documentation)
+├── .gitignore
+├── gmail-agent-project/
+│   ├── extract_emails.py
+│   ├── extract_emails_v2.py
+│   ├── extract_emails_to_bigquery.py (currently running)
+│   ├── customer_domains.txt
+│   ├── prospect_keywords.txt
+│   ├── requirements.txt
+│   └── venv/ (Python virtual environment)
+└── [NOT IN GIT]:
+    ├── credentials.json (OAuth2 credentials)
+    ├── customers.txt (customer email list)
+    ├── token.json (Gmail API token)
+    └── *.csv (email data files)
+```
 
-## Development Workflow
+### BigQuery Resources
+- **Dataset**: `gmail_agent_dataset`
+- **Table**: `emails_raw`
+- **Project**: `account-strategy-464106`
+- **Region**: `us-central1`
 
-This is a tutorial-based project with sequential phases that must be completed in order:
+## Development Commands
 
-1. **Setup Phase**: Configure GCP project and authentication
-2. **Data Collection**: Extract historical Gmail data
-3. **Training Phase**: Build and run ML pipeline in Vertex AI Workbench
-4. **Deployment Phase**: Deploy model and Cloud Function
-5. **Activation Phase**: Enable Gmail watch notifications
+### Check extraction progress
+```bash
+# Check if extraction is still running
+ps aux | grep extract_emails_to_bigquery
 
-## Important Notes
+# Check email count in BigQuery
+bq query --use_legacy_sql=false "SELECT COUNT(*) FROM \`account-strategy-464106.gmail_agent_dataset.emails_raw\`"
 
-- No traditional package managers (no package.json, requirements.txt in root)
-- Code examples are embedded within the PROJECT.md documentation
-- Each phase requires manual configuration in Google Cloud Console
-- Authentication involves multiple OAuth flows and service account setup
-- Production deployment requires Google Workspace admin privileges
+# View extraction statistics
+bq query --use_legacy_sql=false "
+SELECT 
+    COUNT(*) as total,
+    COUNTIF(is_sent_by_me) as sent_by_me,
+    COUNTIF(has_pipe_separator) as with_pipe,
+    COUNTIF(has_new_lead) as with_new_lead
+FROM \`account-strategy-464106.gmail_agent_dataset.emails_raw\`"
+```
 
-## Security Considerations
+### Example labeling queries for next phase
+```sql
+-- Find automated notifications to exclude
+SELECT * FROM `account-strategy-464106.gmail_agent_dataset.emails_raw`
+WHERE is_sent_by_me = true 
+AND (has_pipe_separator OR has_new_lead OR is_from_no_reply)
 
-- OAuth2 credentials and tokens are stored locally during development
-- Service accounts require carefully scoped Gmail API permissions
-- Domain-wide delegation requires Google Workspace admin access
-- All email data processing occurs within Google Cloud infrastructure
+-- Find real customer conversations
+SELECT * FROM `account-strategy-464106.gmail_agent_dataset.emails_raw`
+WHERE sender_domain IN (SELECT DISTINCT domain FROM customer_domains)
+AND NOT is_from_no_reply
+AND NOT has_pipe_separator
+```
+
+## Important Reminders
+
+1. **DO NOT** re-run extraction scripts without checking if one is already running
+2. **DO NOT** commit sensitive files (credentials.json, customers.txt, token.json)
+3. **WAIT** for extraction to complete before applying labels (check with ps aux)
+4. **TEST** labeling queries thoroughly before applying to entire dataset
+5. The user's email is `brandon@getuplevel.ai`
+6. Company domains are `@getuplevel.ai` and `@upleveldigitalservices.com`
+
+## Next Agent Tasks
+
+1. Monitor extraction completion
+2. Develop comprehensive SQL queries for labeling
+3. Create labeled view/table for ML training
+4. Export labeled data for Vertex AI
+5. Continue with Phase 4-7 of the original PROJECT.md
